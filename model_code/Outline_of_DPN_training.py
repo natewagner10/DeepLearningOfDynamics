@@ -135,10 +135,11 @@ class DPN:#(keras_module or whatever):
         self.prob_history = {} #Might be a dumb idea, but it stores the probability that the network chose the action given the state?
                                # key looks like (state, action) value is the probability? marked with optional1
     def train(self, ITERATIONS):
+        optimizer = optim.Adam(self.model.parameters(), lr = 1e-3) #This is roughly based on some pytorch examples. We use this to update weights of the model.
         for i in range(ITERATIONS):
             resource_constraints, time = self.env.generate_random_jobs()
             jobs = self.env.make_starting_states(resource_constraints, time) #this would be a list of starting states
-            self.train_on_jobs(jobs)
+            self.train_on_jobs(jobs, optimizer)
 
     def predict(self, state):
         '''
@@ -158,8 +159,9 @@ class DPN:#(keras_module or whatever):
         '''
         if refresh_defaults:
             output_history = []
-        mu_and_sigma = self.model.predict(current_state)#could be self.predict()   TODO (by model building, or custom implementation). Basically define model architecture
-        picked_action, likelihoods = randomly_selected_action(mu_and_sigma) #returns index of the action/job selected.
+        mu_and_sigma = self.forward(current_state)#could be self.predict()   TODO (by model building, or custom implementation). Basically define model architecture
+                                                                     #This might not work, please see this pull request?  https://github.com/pytorch/pytorch/pull/11178
+        picked_action, likelihoods = randomly_selected_action(mu_and_sigma) #TODO must be redone to work with pytorch.
         self.prob_history[(current_state, picked_action)] = likelihoods #optional1
         new_state, reward = self.env.state_and_reward(current_state, picked_action) #Get the reward and the new state that the action in the environment resulted in. None if action caused death. TODO build in environment
         output_history.append( (current_state, picked_action, reward) )
@@ -167,7 +169,7 @@ class DPN:#(keras_module or whatever):
             return output_history
         return  self.trajectory(new_state, False, output_history)
 
-    def train_on_jobs(self,jobset):
+    def train_on_jobs(self,jobset, optimizer):
         '''
         Training from a batch. Kinda presume the batch is a set of starting states not sure how you have the implemented states (do they include actions internally?)
 
@@ -178,7 +180,7 @@ class DPN:#(keras_module or whatever):
         [1, 2, 3]
         ]
         '''
-        delta = np.zeros(len(self.weights), shape = self.weights.shape) #Basically start gradient or how you'll change weights out at 0 but with the shape or whatever you need to update the weights through addition. TODO figure out how this thing should look
+        optimizer.zero_grad()#Basically start gradient or how you'll change weights out at 0 but with the shape or whatever you need to update the weights through addition. TODO figure out how this thing should look
         for job_start in jobset:
             #episode_array is going to be an array of length N containing trajectories [(s_0, a_0, r_0), ..., (s_L, a_L, r_0)]
             episode_array = [self.trajectory(job_start) for x in range(EPISODES)]
@@ -195,8 +197,11 @@ class DPN:#(keras_module or whatever):
                     except IndexError: #this occurs when the trajectory died
                         break
                     #first two products are scalars, final is scalar multiplication of computed gradients on the NN
-                    #TODO figure out the shape or how to access the DPN's gradient thingy?
-                    #TODO GRADIENT HOW DO???
-                    delta += (cum_values[i][t]-baseline_array[t])*ALPHA*
-                                self.gradient( Math.log( self.prob_history[(state, action)] ) ) #TODO: Must deal with the sum of likelihoods.
-        self.weights = self.weights + delta
+                    mu, sigma = self.forward(state)
+                    distribution = Independant(Normal(mu, sigma),1) #Defines a pytorch distribution equivalent to MultivariateNormal distribution with sigma as the diagonal.
+                    if i ==0 and t == 0:
+                        loss = -(cum_values[i][t]-baseline_array[t])*ALPHA*distribution.log_prob(action) #This is what it should look like in pytorch. Added negative on recommendation of pytorch documentation
+                    else: 
+                        loss += -(cum_values[i][t]-baseline_array[t])*ALPHA*distribution.log_prob(action)
+        loss.backward() #Compute the total cumulated gradient thusfar through our big-ole sum of losses
+        optimizer.step() #Actually update our network weights. The connection between loss and optimizer is "behind the scenes", but recall that it's dependent
