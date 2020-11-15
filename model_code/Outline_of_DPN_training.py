@@ -15,7 +15,7 @@ Most important is the train_on_jobs method for updating the weights of the netwo
 import numpy as np
 from random import random
 from scipy.stats import norm
-
+from critter_environment import Environment
 
 
 ITERATIONS = 1000 #kinda like epochs?
@@ -132,16 +132,16 @@ class DPN:#(keras_module or whatever):
 
         all caps words are hyperparameters you would set.
         '''
-        self.prob_history = {} #Might be a dumb idea, but it stores the probability that the network chose the action given the state?
-                               # key looks like (state, action) value is the probability? marked with optional1
+        self.env = Environment()
     def train(self, ITERATIONS):
-        optimizer = optim.Adam(self.model.parameters(), lr = 1e-3) #This is roughly based on some pytorch examples. We use this to update weights of the model.
+        optimizer = optim.Adam(self.model.parameters(), lr = 3e-3) #This is roughly based on some pytorch examples. We use this to update weights of the model.
         for i in range(ITERATIONS):
-            resource_constraints, time = self.env.generate_random_jobs()
-            jobs = self.env.make_starting_states(resource_constraints, time) #this would be a list of starting states
+            first_frame, last_fram = self.env.make_start_state() #this would be a list of starting states
+            jobs = [first_frame] #due to environment not set up to handle processing different trajectories.
             self.train_on_jobs(jobs, optimizer)
 
-    def predict(self, state):
+
+    def forward(self, state):
         '''
         The forward pass of the network on the given state. Returns the output probabilites for taking the OUTPUT_SIZE probabilites
 
@@ -162,7 +162,6 @@ class DPN:#(keras_module or whatever):
         mu_and_sigma = self.forward(current_state)#could be self.predict()   TODO (by model building, or custom implementation). Basically define model architecture
                                                                      #This might not work, please see this pull request?  https://github.com/pytorch/pytorch/pull/11178
         picked_action, likelihoods = randomly_selected_action(mu_and_sigma) #TODO must be redone to work with pytorch.
-        self.prob_history[(current_state, picked_action)] = likelihoods #optional1
         new_state, reward = self.env.state_and_reward(current_state, picked_action) #Get the reward and the new state that the action in the environment resulted in. None if action caused death. TODO build in environment
         output_history.append( (current_state, picked_action, reward) )
         if new_state is None: #essentially, you died or finished your trajectory
@@ -180,8 +179,9 @@ class DPN:#(keras_module or whatever):
         [1, 2, 3]
         ]
         '''
-        optimizer.zero_grad()#Basically start gradient or how you'll change weights out at 0 but with the shape or whatever you need to update the weights through addition. TODO figure out how this thing should look
+        #optimizer.zero_grad()#Basically start gradient or how you'll change weights out at 0 but with the shape or whatever you need to update the weights through addition. TODO figure out how this thing should look
         for job_start in jobset:
+            optimizer.zero_grad()
             #episode_array is going to be an array of length N containing trajectories [(s_0, a_0, r_0), ..., (s_L, a_L, r_0)]
             episode_array = [self.trajectory(job_start) for x in range(EPISODES)]
             # Now we need to make the valuations
@@ -201,7 +201,7 @@ class DPN:#(keras_module or whatever):
                     distribution = Independant(Normal(mu, sigma),1) #Defines a pytorch distribution equivalent to MultivariateNormal distribution with sigma as the diagonal.
                     if i ==0 and t == 0:
                         loss = -(cum_values[i][t]-baseline_array[t])*ALPHA*distribution.log_prob(action) #This is what it should look like in pytorch. Added negative on recommendation of pytorch documentation
-                    else: 
+                    else:
                         loss += -(cum_values[i][t]-baseline_array[t])*ALPHA*distribution.log_prob(action)
-        loss.backward() #Compute the total cumulated gradient thusfar through our big-ole sum of losses
-        optimizer.step() #Actually update our network weights. The connection between loss and optimizer is "behind the scenes", but recall that it's dependent
+            loss.backward() #Compute the total cumulated gradient thusfar through our big-ole sum of losses
+            optimizer.step() #Actually update our network weights. The connection between loss and optimizer is "behind the scenes", but recall that it's dependent
