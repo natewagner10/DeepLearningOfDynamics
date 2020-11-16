@@ -3,9 +3,12 @@ import numpy as np
 
 
 class Environment:
-    def __init__(self, DATA_FILE_NAME, EPSILON_PERTURBATIONS = False):
+    """
+
+    """
+    def __init__(self, DATA_FILE_NAME, trajectory_length = 30, midpoints = 2, EPSILON_PERTURBATIONS = False):
         self.epsilon_pert = EPSILON_PERTURBATIONS
-        self.data, self.index_lookup, self.subsequent, self.trajectory = data_initializer(DATA_FILE_NAME)
+        self.data, self.index_lookup, self.subsequent, self.trajectory = data_initializer(DATA_FILE_NAME, trajectory_length = trajectory_length, midpoints = midpoints)
         if len(self.index_lookup) != len(self.data):
             print("Warning there are some conflicts in the data lookup")
             print("Attempting to correct this problem")
@@ -45,6 +48,7 @@ class Environment:
 
 if __name__ == "__main__":
     history = []
+    DATA_FILE_NAME = "trajectory_dict.pickle"
     env = Environment(DATA_FILE_NAME, True)
     for i in range(1000):
         start = env.make_start_state()

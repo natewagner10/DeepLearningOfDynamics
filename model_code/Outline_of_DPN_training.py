@@ -17,7 +17,11 @@ from random import random
 from scipy.stats import norm
 from critter_environment import Environment
 
+DATA_FILE_NAME = "trajectory_dict.pickle"
+TRAJECTORY_LENGTH = 30 #Approximately 10 seconds
+MIDPOINTS = 2 #splits video data into trajectories of length above, but this determines the amount of overlap across trajectories
 
+EPSILON_PERTURBATIONS = True  #if we want the network to predict how to perturb LS vector.
 ITERATIONS = 1000 #kinda like epochs?
 BATCH_SIZE = 10   #Might be the exact same thing as episodes, up for interpretation.
 EPISODES = 20     #How many trajectories to explore for a given job. Essentually to get a better estimate of the expected reward.
@@ -132,7 +136,7 @@ class DPN:#(keras_module or whatever):
 
         all caps words are hyperparameters you would set.
         '''
-        self.env = Environment()
+        self.env = Environment(DATA_FILE_NAME, EPSILON_PERTURBATIONS = EPSILON_PERTURBATIONS)
     def train(self, ITERATIONS):
         optimizer = optim.Adam(self.model.parameters(), lr = 3e-3) #This is roughly based on some pytorch examples. We use this to update weights of the model.
         for i in range(ITERATIONS):
