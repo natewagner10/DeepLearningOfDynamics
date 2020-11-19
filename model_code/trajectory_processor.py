@@ -55,10 +55,21 @@ def data_initializer(file_name, trajectory_length = 30, midpoints = 2):
             key = keys[i-1]
             value = keys[i]
             subsequent[key] = value
-    kinda_cursed = (lambda func: lambda x: lambda y: func(x,y) )(
+    '''kinda_cursed = (lambda func: lambda x: lambda y: func(x,y) )(
   (lambda r: lambda n, x: r(r, n, x, n))(
     lambda s, n, x, no: subsequent[x] if n == 1 and x in subsequent else( s(s, n-1, subsequent[x], n) if x in subsequent else (x if n != no else None) ) )
-    )(trajectory_length)
+    )(trajectory_length)'''
+    def not_as_cursed(n,x):
+        current = x
+        for i in range(n):
+            if current in subsequent:
+                current = subsequent[current]
+            elif i != 0 and current not in subsequent:
+                return current
+            else:
+                return None
+        return current
+    kinda_cursed = (lambda f: lambda n: lambda x: f(n,x))(not_as_cursed)(trajectory_length)
     valid_start = keys[::int(round(trajectory_length/midpoints))]
     random_start = list(random.sample(valid_start, len(valid_start)))
     def training_generator(starts = random_start, backup = valid_start):
