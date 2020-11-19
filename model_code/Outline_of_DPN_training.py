@@ -17,11 +17,13 @@ from random import random
 from scipy.stats import norm
 from critter_environment import Environment
 
+from torch.distributions import Independant, Normal
+
 DATA_FILE_NAME = "trajectory_dict.pickle"
 TRAJECTORY_LENGTH = 30 #Approximately 10 seconds
 MIDPOINTS = 2 #splits video data into trajectories of length above, but this determines the amount of overlap across trajectories
 
-EPSILON_PERTURBATIONS = True  #if we want the network to predict how to perturb LS vector.
+EPSILON_PERTURBATIONS = False  #if we want the network to predict how to perturb LS vector.
 ITERATIONS = 1000 #kinda like epochs?
 BATCH_SIZE = 10   #Might be the exact same thing as episodes, up for interpretation.
 EPISODES = 20     #How many trajectories to explore for a given job. Essentually to get a better estimate of the expected reward.
@@ -163,9 +165,10 @@ class DPN:#(keras_module or whatever):
         '''
         if refresh_defaults:
             output_history = []
-        mu_and_sigma = self.forward(current_state)#could be self.predict()   TODO (by model building, or custom implementation). Basically define model architecture
+        mu, sigma = self.forward(current_state)#could be self.predict()   TODO (by model building, or custom implementation). Basically define model architecture
                                                                      #This might not work, please see this pull request?  https://github.com/pytorch/pytorch/pull/11178
-        picked_action, likelihoods = randomly_selected_action(mu_and_sigma) #TODO must be redone to work with pytorch.
+        distribution = Independant(Normal(mu, sigma),1)
+        picked_action = distribution.sample() #TODO must be redone to work with pytorch.
         new_state, reward = self.env.state_and_reward(current_state, picked_action) #Get the reward and the new state that the action in the environment resulted in. None if action caused death. TODO build in environment
         output_history.append( (current_state, picked_action, reward) )
         if new_state is None: #essentially, you died or finished your trajectory
