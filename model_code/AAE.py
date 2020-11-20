@@ -47,7 +47,6 @@ def buildTrainVal():
     
     return train_loader, val_loader
 
-
 class Encoder(nn.Module):
     def __init__(self, dim_input , dim_z):
         super(Encoder, self).__init__()
@@ -117,7 +116,6 @@ class Discriminator(nn.Module):
     def forward(self, z):
         disc = self.network(z)
         return disc
-
 
 def aae_loss(encoder, decoder, Disc, dataloader, optim_encoder, optim_decoder, optim_D, train, optim_encoder_reg):
     ae_criterion = nn.MSELoss()
@@ -189,7 +187,6 @@ def aae_loss(encoder, decoder, Disc, dataloader, optim_encoder, optim_decoder, o
             
     return total_rec_loss, total_disc_loss, total_gen_loss
 
-
 dtype = torch.cuda.FloatTensor
 
 def reconstruct(encoder, decoder, device, dtype, loader_val):
@@ -207,9 +204,7 @@ def reconstruct(encoder, decoder, device, dtype, loader_val):
     comparison = torch.cat((X_val, X_hat_val), 1).view(10 * args.height, 2 * args.width)
     return comparison
 
-
 def train(train_loader, val_loader):
-    
     encoder = Encoder(args.width*args.height,args.dim_z).to(device)
     decoder = Decoder(args.width*args.height,args.dim_z).to(device)
     Disc = Discriminator(args.dim_z,500).to(device)
@@ -219,6 +214,10 @@ def train(train_loader, val_loader):
     optim_decoder = torch.optim.Adam(decoder.parameters(), lr=args.lr)
     optim_D = torch.optim.Adam(Disc.parameters(), lr=args.lr)
     optim_encoder_reg = torch.optim.Adam(encoder.parameters(), lr=0.000001)
+    
+    schedulerDisc = torch.optim.lr_scheduler.ExponentialLR(optim_D, gamma=0.99)
+    schedulerD = torch.optim.lr_scheduler.ExponentialLR(optim_decoder, gamma=0.99)
+    schedulerE = torch.optim.lr_scheduler.ExponentialLR(optim_encoder, gamma=0.99)
     
     train_rec_loss = []
     train_disc_loss = []
