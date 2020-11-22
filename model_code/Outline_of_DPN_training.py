@@ -129,22 +129,17 @@ class DPN(nn.Module):
     def __init__(self, INPUT_SIZE, OUTPUT_SIZE):
         super(DPN, self).__init__() #Initialize base methods of keras NN module stuff?
         '''
-        define your shit about the NN stuff initial weights, architecture, and so forth
-        WE NEED TO FIGURE OUT HOW TO GET GRADIENT of log(policy(state, action))
-        Also allow weights to be updated through addition? Something like that.
-
-
         INPUT_SIZE = size and shape from the environment's output for a state  TODO
         OUTPUT_SIZE = number of possible actions                               TODO
 
         Probably include stuff to interact with the environment after inputting a class
 
         all caps words are hyperparameters you would set.
-        ''' 
+        '''
         self.env = Environment(DATA_FILE_NAME, EPSILON_PERTURBATIONS = EPSILON_PERTURBATIONS)
         self.INPUT_SIZE = INPUT_SIZE
         self.OUTPUT_SIZE = OUTPUT_SIZE
-        
+
         # Define the network
         self.network = nn.Sequential(
             nn.Linear(self.INPUT_SIZE, 64),
@@ -156,8 +151,8 @@ class DPN(nn.Module):
             nn.Linear(256, self.OUTPUT_SIZE),
             nn.Softmax(dim=-1)
         )
-        
-        
+
+
     def train(self, ITERATIONS):
         optimizer = optim.Adam(self.model.parameters(), lr = 3e-3) #This is roughly based on some pytorch examples. We use this to update weights of the model.
         for i in range(ITERATIONS):
@@ -172,7 +167,7 @@ class DPN(nn.Module):
 
         might already be defined from the initialization after defining your model
         '''
-        probs = self.network(torch.FloatTensor(state))
+        mu, sigma = self.network(torch.FloatTensor(state))
         return probs
 
 
@@ -185,8 +180,8 @@ class DPN(nn.Module):
         '''
         if refresh_defaults:
             output_history = []
-        mu, sigma = self.forward(current_state)#could be self.predict()   TODO (by model building, or custom implementation). Basically define model architecture
-                                                                     #This might not work, please see this pull request?  https://github.com/pytorch/pytorch/pull/11178
+        mu, log_sigma = self.forward(current_state)#could be self.predict()   TODO (by model building, or custom implementation). Basically define model architecture
+        sigma = torch.exp(log_sigma)                                                             #This might not work, please see this pull request?  https://github.com/pytorch/pytorch/pull/11178
         distribution = Independant(Normal(mu, sigma),1)
         picked_action = distribution.sample() #TODO must be redone to work with pytorch.
         new_state, reward = self.env.state_and_reward(current_state, picked_action) #Get the reward and the new state that the action in the environment resulted in. None if action caused death. TODO build in environment
@@ -224,7 +219,8 @@ class DPN(nn.Module):
                     except IndexError: #this occurs when the trajectory died
                         break
                     #first two products are scalars, final is scalar multiplication of computed gradients on the NN
-                    mu, sigma = self.forward(state)
+                    mu, log_sigma = self.forward(state)
+                    sigma = torch.exp(log_sigma)
                     distribution = Independant(Normal(mu, sigma),1) #Defines a pytorch distribution equivalent to MultivariateNormal distribution with sigma as the diagonal.
                     if i ==0 and t == 0:
                         loss = -(cum_values[i][t]-baseline_array[t])*ALPHA*distribution.log_prob(action) #This is what it should look like in pytorch. Added negative on recommendation of pytorch documentation
