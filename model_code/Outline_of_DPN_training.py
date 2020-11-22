@@ -161,7 +161,7 @@ class DPN(nn.Module):
     def train(self, ITERATIONS):
         optimizer = optim.Adam(self.model.parameters(), lr = 3e-3) #This is roughly based on some pytorch examples. We use this to update weights of the model.
         for i in range(ITERATIONS):
-            first_frame, last_fram = self.env.make_start_state() #this would be a list of starting states
+            first_frame = self.env.make_start_state() #this would be a list of starting states
             jobs = [first_frame] #TODO: Coerce job variable to appropriate pytorch type. Necessary due to environment not set up to handle processing different trajectories.
             self.train_on_jobs(jobs, optimizer)
 
