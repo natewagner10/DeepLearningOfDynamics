@@ -19,6 +19,9 @@ from critter_environment import Environment
 
 from torch.distributions import Independant, Normal
 
+import torch.nn as nn
+import torch
+
 DATA_FILE_NAME = "trajectory_dict.pickle"
 TRAJECTORY_LENGTH = 30 #Approximately 10 seconds
 MIDPOINTS = 2 #splits video data into trajectories of length above, but this determines the amount of overlap across trajectories
@@ -122,9 +125,9 @@ def randomly_selected_action(probs):
 """
 
 
-class DPN:#(keras_module or whatever):
-    def __init(self)__:
-        #Super(self, __init__) #Initialize base methods of keras NN module stuff?
+class DPN(nn.Module):
+    def __init__(self, INPUT_SIZE, OUTPUT_SIZE):
+        super(DPN, self).__init__() #Initialize base methods of keras NN module stuff?
         '''
         define your shit about the NN stuff initial weights, architecture, and so forth
         WE NEED TO FIGURE OUT HOW TO GET GRADIENT of log(policy(state, action))
@@ -137,8 +140,24 @@ class DPN:#(keras_module or whatever):
         Probably include stuff to interact with the environment after inputting a class
 
         all caps words are hyperparameters you would set.
-        '''
+        ''' 
         self.env = Environment(DATA_FILE_NAME, EPSILON_PERTURBATIONS = EPSILON_PERTURBATIONS)
+        self.INPUT_SIZE = INPUT_SIZE
+        self.OUTPUT_SIZE = OUTPUT_SIZE
+        
+        # Define the network
+        self.network = nn.Sequential(
+            nn.Linear(self.INPUT_SIZE, 64),
+            nn.ReLu(),
+            nn.Linear(64, 128),
+            nn.ReLu(),
+            nn.Linear(128, 256),
+            nn.ReLu(),
+            nn.Linear(256, self.OUTPUT_SIZE),
+            nn.Softmax(dim=-1)
+        )
+        
+        
     def train(self, ITERATIONS):
         optimizer = optim.Adam(self.model.parameters(), lr = 3e-3) #This is roughly based on some pytorch examples. We use this to update weights of the model.
         for i in range(ITERATIONS):
@@ -153,7 +172,8 @@ class DPN:#(keras_module or whatever):
 
         might already be defined from the initialization after defining your model
         '''
-        pass
+        probs = self.network(state)
+        return probs
 
 
     def trajectory(self, current_state, refresh_defaults = True, output_history = []):
