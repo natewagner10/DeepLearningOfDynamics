@@ -172,7 +172,7 @@ class DPN(nn.Module):
 
         might already be defined from the initialization after defining your model
         '''
-        probs = self.network(state)
+        probs = self.network(torch.FloatTensor(state))
         return probs
 
 
