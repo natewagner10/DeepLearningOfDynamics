@@ -12,6 +12,7 @@ ProjectDirectory:
 
 import os
 import random
+import torch
 #from pandas import read_csv
 """
 kinda_cursed is definitely cursed - no question about it - but it provides considerable speed benefits, and completely generalizes situations where there isn't a single long path through a video (multiple clips, for example).
@@ -76,7 +77,7 @@ def data_initializer(file_name, trajectory_length = 30, midpoints = 2):
         if starts == []:
             starts.extend(random.sample(backup, len(backup)))
         start_frame = starts.pop()
-        end_frame = kinda_cursed(start)
+        end_frame = kinda_cursed(start_frame)
         return start_frame, end_frame
     return data, lookup, subsequent, training_generator
 
