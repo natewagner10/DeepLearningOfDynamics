@@ -48,7 +48,7 @@ def data_initializer(file_name, trajectory_length = 30, midpoints = 2):
     import pickle
     data = pickle.load(open(file_name, "rb"))
     #Make the subsequent frame dictionary
-    tensor_convert = lambda x: torch.from_numpy(x.astype(np.float)).float
+    tensor_convert = lambda x: torch.from_numpy(x.astype(np.float)).float()
     data = {key:tensor_convert(value) for key, value in data.items() }
     keys = list(data.keys())
     keys.sort()

@@ -1,5 +1,5 @@
 from trajectory_processor import data_initializer
-import torch.dist
+from torch import dist
 
 
 class Environment:
@@ -43,7 +43,7 @@ class Environment:
             guess = current_state + picked_action
         else:
             guess = picked_action
-        reward = -torch.dist(guess - next_state)
+        reward = -dist(guess, next_state)
         return returned_state, reward
 
 if __name__ == "__main__":
