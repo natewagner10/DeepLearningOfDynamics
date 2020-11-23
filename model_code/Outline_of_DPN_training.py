@@ -168,7 +168,7 @@ class DPN(nn.Module):
         might already be defined from the initialization after defining your model
         '''
         mu, sigma = self.network(torch.FloatTensor(state))
-        return probs
+        return mu, sigma
 
 
     def trajectory(self, current_state, refresh_defaults = True, output_history = []):
