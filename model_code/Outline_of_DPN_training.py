@@ -11,15 +11,16 @@ The output predictions are the probabilities for choosing to schedule one of the
 Most important is the train_on_jobs method for updating the weights of the network, in accordance with DPN loss functions.
 """
 
+from critic_dpn import DPN, Critic
 
 import numpy as np
 from random import random
 from scipy.stats import norm
 from critter_environment import Environment
 
-from torch.distributions import Independant, Normal
-
-import torch.nn as nn
+from torch.distributions import Independent, Normal
+#from torch.distributions.independent import Independent
+#from torch.distributions.normal import Normal
 import torch
 
 DATA_FILE_NAME = "trajectory_dict.pickle"
@@ -58,76 +59,20 @@ def curried_valuation(length_of_longest_trajectory):
         return out
     return valuation
 
-def log_likelihood(mu,sigma,activation):
-    '''
-    Calculation of the log-likelihood of an arbitrary k-dimensional diagonal gaussian distribution:
-
-    I.e., log(\pi_theta(a|s))
-
-    HOWEVER, this can likely be fixed with some PURE pytorch functionality!
-    '''
-    k = len(mu)
-    out = -0.5*sum((np.square(mu-activation))/np.square(sigma) + 2*np.log(sigma)) + k*np.log(2*np.pi)
-    return out
+def weights_init_uniform_rule(m):
+    classname = m.__class__.__name__
+    # for every Linear layer in a model..
+    if classname.find('Linear') != -1:
+        # get the number of the inputs
+        n = m.in_features
+        y = 1.0/np.sqrt(n)
+        m.weight.data.uniform_(-y, y)
+        m.bias.data.fill_(0)
 
 
-def randomly_selected_action(mu_and_sigma, slice = False):
-    '''
-    Recall that we'll be utilizing the "reparameterization trick" for the output vector of our network.
 
-    Converts the output of our network [mu_0, sigma_0, ..., mu_M, sigma_M] into:
-
-    1. A randomly selected perterbation amount: [e_0, e_2, ..., e_M] by letting e_i = mu_i + sigma_i * z_i where z_i ~ N(0,1)
-    2. Likilihoods of having drawn each epsilon from e_i ~ N(mu_i, sigma_i), by calculating pdf(z_i, mu=0, sigma=1), in R this is dnorm(z_i, 0, 1)
-    '''
-    epsilon_length = int(len(mu_and_sigma)/2)
-    if len(mu_and_sigma)%2 == 1:
-        raise ValueError("Oh, actual fuck, we somehow made our output layer 'oddly' sized.")
-    #First we get the mean vector and sigma vector from our model's output.
-    if slice:
-        mean = np.array(mu_and_sigma[:epsilon_length])
-        sigma = np.array(mu_and_sigma[epsilon_length:])
-    else:
-        mean = np.array([y for x,y in enumerate(mu_and_sigma) if x%2 == 0])
-        sigma = np.array([y for x,y in enumerate(mu_and_sigma) if x%2 == 1])
-    sigma = np.exp(sigma)
-    #Select M/2 total IID z-stats from N(0,1)
-    z_stat = np.random.normal(size = epsilon_length)
-    #Calculate likelihoods of having pulled each epsilon
-    likelihoods = np.array([norm.pdf(x) for x in z_stat])
-    #Calculate our actual perterbation amound, epsilon
-    epsilon = mean + sigma*z_stat
-    return epsilon, likelihoods
-
-"""
-This code is if you're action space is finite, and the network outputs are probabilities instead of the parameters of our distribution.
-
-
-def randomly_selected_action(probs):
-    '''
-    Given a set of output probabilities corresponding to actions (or jobs to schedule):
-
-    Randomly select one action with the described probabilities.
-
-    Output the index of the job to schedule and the probability that we chose that action.
-
-    For large probability lists, we might choose the final probability less than we expect due to floating point arithmetic problems.
-    '''
-    action_number = np.random.random()
-    index = 0
-    lower = 0
-    upper = probs[index]
-    while not (lower <= action_number and action_number <= upper):
-        index += 1
-        lower += upper
-        upper += probs[index]
-    return index, probs[index]
-"""
-
-
-class DPN(nn.Module):
-    def __init__(self, INPUT_SIZE, OUTPUT_SIZE):
-        super(DPN, self).__init__() #Initialize base methods of keras NN module stuff?
+class DpnTraining:
+    def __init__(self, INPUT_SIZE):
         '''
         INPUT_SIZE = size and shape from the environment's output for a state  TODO
         OUTPUT_SIZE = number of possible actions                               TODO
@@ -137,24 +82,15 @@ class DPN(nn.Module):
         all caps words are hyperparameters you would set.
         '''
         self.env = Environment(DATA_FILE_NAME, EPSILON_PERTURBATIONS = EPSILON_PERTURBATIONS)
-        self.INPUT_SIZE = INPUT_SIZE
-        self.OUTPUT_SIZE = OUTPUT_SIZE
 
         # Define the network
-        self.network = nn.Sequential(
-            nn.Linear(self.INPUT_SIZE, 64),
-            nn.ReLu(),
-            nn.Linear(64, 128),
-            nn.ReLu(),
-            nn.Linear(128, 256),
-            nn.ReLu(),
-            nn.Linear(256, self.OUTPUT_SIZE),
-            nn.Softmax(dim=-1)
-        )
+        self.network = DPN(INPUT_SIZE)
+        self.network.apply(weights_init_uniform_rule)
+        self.critic = Critic(INPUT_SIZE)
 
 
     def train(self, ITERATIONS):
-        optimizer = optim.Adam(self.model.parameters(), lr = 3e-3) #This is roughly based on some pytorch examples. We use this to update weights of the model.
+        optimizer = torch.optim.Adam(self.network.parameters(), lr = 3e-3) #This is roughly based on some pytorch examples. We use this to update weights of the model.
         for i in range(ITERATIONS):
             first_frame = self.env.make_start_state() #this would be a list of starting states
             jobs = [first_frame] #TODO: Coerce job variable to appropriate pytorch type. Necessary due to environment not set up to handle processing different trajectories.
@@ -167,7 +103,10 @@ class DPN(nn.Module):
 
         might already be defined from the initialization after defining your model
         '''
-        mu, sigma = self.network(torch.FloatTensor(state))
+        state = state.astype(np.float)
+        state = torch.from_numpy(state).float()
+        print(state)
+        mu, sigma = self.network(state)
         return mu, sigma
 
 
@@ -182,7 +121,7 @@ class DPN(nn.Module):
             output_history = []
         mu, log_sigma = self.forward(current_state)#could be self.predict()   TODO (by model building, or custom implementation). Basically define model architecture
         sigma = torch.exp(log_sigma)                                                             #This might not work, please see this pull request?  https://github.com/pytorch/pytorch/pull/11178
-        distribution = Independant(Normal(mu, sigma),1)
+        distribution = Independent(Normal(mu, sigma),1)
         picked_action = distribution.sample() #TODO must be redone to work with pytorch.
         new_state, reward = self.env.state_and_reward(current_state, picked_action) #Get the reward and the new state that the action in the environment resulted in. None if action caused death. TODO build in environment
         output_history.append( (current_state, picked_action, reward) )
