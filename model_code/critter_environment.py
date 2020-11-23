@@ -1,5 +1,5 @@
 from trajectory_processor import data_initializer
-import numpy as np
+import torch.dist
 
 
 class Environment:
@@ -31,7 +31,7 @@ class Environment:
         """
         Should take the current state and the action and return the new state and the reward.
         """
-        index = self.index_lookup[tuple(current_state)]
+        index = self.index_lookup[current_state]
         next_index = self.subsequent[index]
         next_state = self.data[next_index]
         if next_index == self.final_index:
@@ -43,7 +43,7 @@ class Environment:
             guess = current_state + picked_action
         else:
             guess = picked_action
-        reward = -np.linalg.norm(guess - next_state)
+        reward = -torch.dist(guess - next_state)
         return returned_state, reward
 
 if __name__ == "__main__":
@@ -55,7 +55,7 @@ if __name__ == "__main__":
         for j in range(5):
             current_state = start
             while current_state is not None:
-                x = np.zeros(20)
+                x = torch.zeros(20)
                 current_state, reward = env.state_and_reward(current_state,x)
                 history.append(reward)
 

@@ -13,6 +13,7 @@ ProjectDirectory:
 import os
 import random
 import torch
+import numpy as np
 #from pandas import read_csv
 """
 kinda_cursed is definitely cursed - no question about it - but it provides considerable speed benefits, and completely generalizes situations where there isn't a single long path through a video (multiple clips, for example).
@@ -47,9 +48,11 @@ def data_initializer(file_name, trajectory_length = 30, midpoints = 2):
     import pickle
     data = pickle.load(open(file_name, "rb"))
     #Make the subsequent frame dictionary
+    tensor_convert = lambda x: torch.from_numpy(x.astype(np.float)).float
+    data = {key:tensor_convert(value) for key, value in data.items() }
     keys = list(data.keys())
     keys.sort()
-    lookup = dict((tuple(y),x) for x,y in data.items())
+    lookup = {y:x for x,y in data.items()}
     subsequent = dict()
     for i in range(len(keys)):
         if i != 0:
