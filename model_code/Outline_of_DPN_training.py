@@ -90,19 +90,38 @@ class DpnTraining:
         self.network = DPN(INPUT_SIZE)
         self.network.apply(weights_init_uniform_rule)
         self.critic = Critic(INPUT_SIZE)
-        self.expected_long_term_rewards = []
+        self.eps = np.finfo(np.float32).eps.item()
+        self.rewards = []
         self.variance = []
+        self.rewards_last = []
+        self.variance_last = []
 
+    def finish_episode():
+        R = 0
+        policy_loss = []
+        returns = []
+        for r in self.rewards[::-1]:
+            R = r + DISCOUNT * R
+            returns.insert(0, R)
+        returns = torch.tensor(returns)
+        returns = (returns - returns.mean()) / (returns.std() + self.eps)
+        for log_prob, R in zip(self.saved_log_probs, returns):
+            policy_loss.append(-log_prob * R)
+        optimizer.zero_grad()
+        policy_loss = torch.cat(policy_loss).sum()
+        policy_loss.backward()
+        optimizer.step()
+        del self.rewards[:]
+        del self.saved_log_probs[:]
 
     def train(self, ITERATIONS):
         optimizer = torch.optim.Adam(self.network.parameters(), lr = ALPHA) #This is roughly based on some pytorch examples. We use this to update weights of the model.
         for i in range(ITERATIONS):
             first_frame = self.env.make_start_state() #this would be a list of starting states
             jobs = [first_frame] #TODO: Coerce job variable to appropriate pytorch type. Necessary due to environment not set up to handle processing different trajectories.
-            x = self.train_on_jobs(jobs, optimizer)
-            #temp
-            return x
-            print("Iteration "+str(i+1)+" Completed with reward: " + str(self.expected_long_term_rewards[-1]))
+            self.train_on_jobs(jobs, optimizer)
+            print("Iteration "+str(i+1)+" Completed with reward: " + str(self.rewards[-1]) + " Variance of :" + str(self.variance[-1]))
+            print("Average last avg reward: " + str(self.rewards_last[-1]) + " last variance avg: " + str(self.variance_last[-1]))
 
 
     def forward(self, state):
@@ -112,29 +131,31 @@ class DpnTraining:
         might already be defined from the initialization after defining your model
         '''
         mu, sigma = self.network(state)
-        return mu, sigma
+        return mu, torch.exp(sigma)
 
 
-    def trajectory(self, current_state, refresh_defaults = True, output_history = []):
+    def trajectory(self, current_state):
         '''
         Maybe this implementation doesn't utilize GPUs very well, but I have no clue or not.
 
         Final output looks like:
         [(s_0, a_0, r_0), ..., (s_L, a_L, r_l)]
         '''
-        if refresh_defaults:
-            output_history.clear()
-        mu, log_sigma = self.forward(current_state)#could be self.predict()   TODO (by model building, or custom implementation). Basically define model architecture
-        sigma = torch.exp(log_sigma)                                                             #This might not work, please see this pull request?  https://github.com/pytorch/pytorch/pull/11178
-        distribution = Independent(Normal(mu, sigma),1)
-        picked_action = distribution.rsample()
-        action = picked_action.detach()
-        #print(action)
-        new_state, reward = self.env.state_and_reward(current_state, action) #Get the reward and the new state that the action in the environment resulted in. None if action caused death. TODO build in environment
-        output_history.append( (current_state, action, reward) )
-        if new_state is None: #essentially, you died or finished your trajectory
-            return output_history
-        return  self.trajectory(new_state, False, output_history)
+        output_history = []
+        while True:
+            mu, sigma = self.forward(current_state)
+            distribution = Independent(Normal(mu, sigma),1)
+            picked_action = distribution.rsample()
+            action = picked_action.detach()
+            #print(action)
+            new_state, reward = self.env.state_and_reward(current_state, action) #Get the reward and the new state that the action in the environment resulted in. None if action caused death. TODO build in environment
+            #Attempting this
+            output_history.append( (current_state, action, reward, distribution.log_prob(action)) )
+            if new_state is None: #essentially, you died or finished your trajectory
+                break
+            else:
+                current_state = new_state
+        return output_history
 
     def train_on_jobs(self,jobset, optimizer):
         '''
@@ -151,37 +172,37 @@ class DpnTraining:
         for job_start in jobset:
             optimizer.zero_grad()
             #episode_array is going to be an array of length N containing trajectories [(s_0, a_0, r_0), ..., (s_L, a_L, r_0)]
-            episode_array = []
-            for episode in range(EPISODES):
-                first_state = job_start
-                episode_array.append(self.trajectory(first_state))
+            episode_array = [self.trajectory(job_start) for x in range(EPISODES)]
             # Now we need to make the valuations
             #temp
-            return episode_array
             longest_trajectory = max(len(episode) for episode in episode_array)
             valuation_fun = curried_valuation(longest_trajectory)
             cum_values = np.array([valuation_fun(ep) for ep in episode_array]) #should be a EPISODESxlength sized
             #Compute the baseline valuations.
             baseline_array = np.array([sum(cum_values[:,i])/EPISODES for i in range(longest_trajectory)]) #Probably defeats the purpose of numpy, but we're essentially trying to sum each valuation array together, and then divide by the number of episodes
             avg = baseline_array[0]
-            var = np.square(cum_values[:,0]-1)
-            print(cum_values)
+            var = [np.sqrt(sum(np.square(cum_values[:,i]-baseline_array[i]))/EPISODES) for i in range(longest_trajectory)]
+            #print(cum_values)
             #print()
-            self.expected_long_term_rewards.append(avg)
-            self.variance.append(var)
+            self.rewards.append(avg)
+            self.variance.append(var[0])
+            self.variance_last.append(var[-1])
+            self.rewards_last.append(baseline_array[-1])
+            #policy updates
             for i in range(EPISODES): #swapped two for loops
                 for t in range(longest_trajectory):
                     try:
-                        state, action, reward = episode_array[i][t]
+                        state, action, reward, log_prob = episode_array[i][t]
                     except IndexError: #this occurs when the trajectory is over.
                         break
-                    #first two products are scalars, final is scalar multiplication of computed gradients on the NN
-                    mu, log_sigma = self.forward(state)
-                    sigma = torch.exp(log_sigma)
-                    distribution = Independent(Normal(mu, sigma),1) #Defines a pytorch distribution equivalent to MultivariateNormal distribution with sigma as the diagonal.
-                    if i ==0 and t == 0:
-                        loss = (cum_values[i][t]-baseline_array[t])*distribution.log_prob(action) #This is what it should look like in pytorch. Added negative on recommendation of pytorch documentation
+                    if var[t] <1e-4:
+                        varry = 1e-4
                     else:
-                        loss += (cum_values[i][t]-baseline_array[t])*distribution.log_prob(action)
+                        varry = var[t]
+                    #first two products are scalars, final is scalar multiplication of computed gradients on the NN
+                    if i ==0 and t == 0:
+                        loss = -(cum_values[i][t]-baseline_array[t])/(varry + self.eps) * log_prob #This is what it should look like in pytorch. Added negative on recommendation of pytorch documentation
+                    else:
+                        loss += -(cum_values[i][t]-baseline_array[t])/(varry + self.eps)*log_prob
             loss.backward() #Compute the total cumulated gradient thusfar through our big-ole sum of losses
             optimizer.step() #Actually update our network weights. The connection between loss and optimizer is "behind the scenes", but recall that it's dependent
