@@ -52,7 +52,7 @@ def data_initializer(file_name, trajectory_length = 30, midpoints = 2):
     data = {key:tensor_convert(value) for key, value in data.items() }
     keys = list(data.keys())
     keys.sort()
-    lookup = {y:x for x,y in data.items()}
+    lookup = {tuple(y.numpy()):x for x,y in data.items()}
     subsequent = dict()
     for i in range(len(keys)):
         if i != 0:

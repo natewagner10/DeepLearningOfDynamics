@@ -31,7 +31,9 @@ class Environment:
         """
         Should take the current state and the action and return the new state and the reward.
         """
-        index = self.index_lookup[current_state]
+        #current_state, picked_action = current_state.detach().clone(), picked_action.detach().clone()
+        lookup_able = tuple(current_state.detach().clone().numpy())
+        index = self.index_lookup[lookup_able]
         next_index = self.subsequent[index]
         next_state = self.data[next_index]
         if next_index == self.final_index:
@@ -44,7 +46,7 @@ class Environment:
         else:
             guess = picked_action
         reward = -dist(guess, next_state)
-        reward = reward.detach().clone().numpy()
+        reward = reward.detach()
         return returned_state, reward
 
 if __name__ == "__main__":
