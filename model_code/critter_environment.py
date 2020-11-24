@@ -44,6 +44,7 @@ class Environment:
         else:
             guess = picked_action
         reward = -dist(guess, next_state)
+        reward = reward.detach().clone().numpy()
         return returned_state, reward
 
 if __name__ == "__main__":

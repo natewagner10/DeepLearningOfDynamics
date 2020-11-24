@@ -32,7 +32,7 @@ ITERATIONS = 1000 #kinda like epochs?
 BATCH_SIZE = 10   #Might be the exact same thing as episodes, up for interpretation.
 EPISODES = 20     #How many trajectories to explore for a given job. Essentually to get a better estimate of the expected reward.
 DISCOUNT = 0.99   #how much to discount the reward
-ALPHA = 0.001     #learning rate?
+ALPHA = 3e-3     #learning rate?
 
 def curried_valuation(length_of_longest_trajectory):
     '''
@@ -90,14 +90,19 @@ class DpnTraining:
         self.network = DPN(INPUT_SIZE)
         self.network.apply(weights_init_uniform_rule)
         self.critic = Critic(INPUT_SIZE)
+        self.expected_long_term_rewards = []
+        self.variance = []
 
 
     def train(self, ITERATIONS):
-        optimizer = torch.optim.Adam(self.network.parameters(), lr = 3e-3) #This is roughly based on some pytorch examples. We use this to update weights of the model.
+        optimizer = torch.optim.Adam(self.network.parameters(), lr = ALPHA) #This is roughly based on some pytorch examples. We use this to update weights of the model.
         for i in range(ITERATIONS):
             first_frame = self.env.make_start_state() #this would be a list of starting states
             jobs = [first_frame] #TODO: Coerce job variable to appropriate pytorch type. Necessary due to environment not set up to handle processing different trajectories.
-            self.train_on_jobs(jobs, optimizer)
+            x = self.train_on_jobs(jobs, optimizer)
+            #temp
+            return x
+            print("Iteration "+str(i+1)+" Completed with reward: " + str(self.expected_long_term_rewards[-1]))
 
 
     def forward(self, state):
@@ -122,8 +127,9 @@ class DpnTraining:
         mu, log_sigma = self.forward(current_state)#could be self.predict()   TODO (by model building, or custom implementation). Basically define model architecture
         sigma = torch.exp(log_sigma)                                                             #This might not work, please see this pull request?  https://github.com/pytorch/pytorch/pull/11178
         distribution = Independent(Normal(mu, sigma),1)
-        picked_action = distribution.sample() #TODO must be redone to work with pytorch.
+        picked_action = distribution.rsample()
         action = picked_action.detach()
+        #print(action)
         new_state, reward = self.env.state_and_reward(current_state, action) #Get the reward and the new state that the action in the environment resulted in. None if action caused death. TODO build in environment
         output_history.append( (current_state, action, reward) )
         if new_state is None: #essentially, you died or finished your trajectory
@@ -145,26 +151,37 @@ class DpnTraining:
         for job_start in jobset:
             optimizer.zero_grad()
             #episode_array is going to be an array of length N containing trajectories [(s_0, a_0, r_0), ..., (s_L, a_L, r_0)]
-            episode_array = [self.trajectory(job_start) for x in range(EPISODES)]
+            episode_array = []
+            for episode in range(EPISODES):
+                first_state = job_start
+                episode_array.append(self.trajectory(first_state))
             # Now we need to make the valuations
+            #temp
+            return episode_array
             longest_trajectory = max(len(episode) for episode in episode_array)
             valuation_fun = curried_valuation(longest_trajectory)
             cum_values = np.array([valuation_fun(ep) for ep in episode_array]) #should be a EPISODESxlength sized
             #Compute the baseline valuations.
             baseline_array = np.array([sum(cum_values[:,i])/EPISODES for i in range(longest_trajectory)]) #Probably defeats the purpose of numpy, but we're essentially trying to sum each valuation array together, and then divide by the number of episodes
+            avg = baseline_array[0]
+            var = np.square(cum_values[:,0]-1)
+            print(cum_values)
+            #print()
+            self.expected_long_term_rewards.append(avg)
+            self.variance.append(var)
             for i in range(EPISODES): #swapped two for loops
                 for t in range(longest_trajectory):
                     try:
-                        state, action, reward = episodes_array[i][t]
+                        state, action, reward = episode_array[i][t]
                     except IndexError: #this occurs when the trajectory is over.
                         break
                     #first two products are scalars, final is scalar multiplication of computed gradients on the NN
                     mu, log_sigma = self.forward(state)
                     sigma = torch.exp(log_sigma)
-                    distribution = Independant(Normal(mu, sigma),1) #Defines a pytorch distribution equivalent to MultivariateNormal distribution with sigma as the diagonal.
+                    distribution = Independent(Normal(mu, sigma),1) #Defines a pytorch distribution equivalent to MultivariateNormal distribution with sigma as the diagonal.
                     if i ==0 and t == 0:
-                        loss = -(cum_values[i][t]-baseline_array[t])*ALPHA*distribution.log_prob(action) #This is what it should look like in pytorch. Added negative on recommendation of pytorch documentation
+                        loss = (cum_values[i][t]-baseline_array[t])*distribution.log_prob(action) #This is what it should look like in pytorch. Added negative on recommendation of pytorch documentation
                     else:
-                        loss += -(cum_values[i][t]-baseline_array[t])*ALPHA*distribution.log_prob(action)
+                        loss += (cum_values[i][t]-baseline_array[t])*distribution.log_prob(action)
             loss.backward() #Compute the total cumulated gradient thusfar through our big-ole sum of losses
             optimizer.step() #Actually update our network weights. The connection between loss and optimizer is "behind the scenes", but recall that it's dependent
