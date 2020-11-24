@@ -45,17 +45,20 @@ def curried_valuation(length_of_longest_trajectory):
     def valuation(episode):
         '''
         returns the valuation of an episode (with padding)
-        input: [(s_0, a_0, r_0), ... ,(s_t, a_t, r_t)]         potentially t<L
+        input: [(s_0, a_0, r_0), ... ,(s_t, a_t, r_t)]         potentially t<length_of_longest_trajectory
         output: [v_0, v_1, ... v_L]
         '''
-        x = len(episode)
-        if x != length_of_longest_trajectory:
+
+        length = len(episode)
+        if length != length_of_longest_trajectory:
             #If the episode isn't as long as the longest trajectory, pad it
-            episode.extend([(0,0,0) for x in range(length_of_longest_trajectory-x)]) #have to make sure the numbers line up correctly
-        # TODO
-        #compute valuation with the episode/trajectory after it's been padded. There could be something clever here.
-        out = np.array([valuation for valuation in range(length_of_longest_trajectory)])
-        #out = do_the_thing(episode)
+            episode.extend([(0,0,0) for y in range(length_of_longest_trajectory-length)]) #have to make sure the numbers line up correctly
+        out = np.zeros(len(episode))
+        x = [i[2] for i in episode] #rewards
+        out[-1] = x[-1]
+        for i in reversed(range(len(x)-1)): #go backwards
+            out[i] = x[i] + DISCOUNT*out[i+1] #this step valuation = reward + gamma*next_step_valuation
+        #assert x.ndim >= 1
         return out
     return valuation
 
@@ -103,9 +106,6 @@ class DpnTraining:
 
         might already be defined from the initialization after defining your model
         '''
-        state = state.astype(np.float)
-        state = torch.from_numpy(state).float()
-        print(state)
         mu, sigma = self.network(state)
         return mu, sigma
 
@@ -118,13 +118,14 @@ class DpnTraining:
         [(s_0, a_0, r_0), ..., (s_L, a_L, r_l)]
         '''
         if refresh_defaults:
-            output_history = []
+            output_history.clear()
         mu, log_sigma = self.forward(current_state)#could be self.predict()   TODO (by model building, or custom implementation). Basically define model architecture
         sigma = torch.exp(log_sigma)                                                             #This might not work, please see this pull request?  https://github.com/pytorch/pytorch/pull/11178
         distribution = Independent(Normal(mu, sigma),1)
         picked_action = distribution.sample() #TODO must be redone to work with pytorch.
-        new_state, reward = self.env.state_and_reward(current_state, picked_action) #Get the reward and the new state that the action in the environment resulted in. None if action caused death. TODO build in environment
-        output_history.append( (current_state, picked_action, reward) )
+        action = picked_action.detach()
+        new_state, reward = self.env.state_and_reward(current_state, action) #Get the reward and the new state that the action in the environment resulted in. None if action caused death. TODO build in environment
+        output_history.append( (current_state, action, reward) )
         if new_state is None: #essentially, you died or finished your trajectory
             return output_history
         return  self.trajectory(new_state, False, output_history)
@@ -148,14 +149,14 @@ class DpnTraining:
             # Now we need to make the valuations
             longest_trajectory = max(len(episode) for episode in episode_array)
             valuation_fun = curried_valuation(longest_trajectory)
-            cum_values = np.array(map(episode_array, valuation_fun)) #should be a EPISODESxlength sized
-            #can compute baselines without a loop?
-            baseline_array = np.array([sum(cum_values[:,i])/EPISODES for i in range(longest_trajectory)]) #Probably defeats the purpose of numpy, but we're essentially trying to sum each valuation array together, and then divide by the number of episodes TODO make it work nicely
+            cum_values = np.array([valuation_fun(ep) for ep in episode_array]) #should be a EPISODESxlength sized
+            #Compute the baseline valuations.
+            baseline_array = np.array([sum(cum_values[:,i])/EPISODES for i in range(longest_trajectory)]) #Probably defeats the purpose of numpy, but we're essentially trying to sum each valuation array together, and then divide by the number of episodes
             for i in range(EPISODES): #swapped two for loops
                 for t in range(longest_trajectory):
                     try:
                         state, action, reward = episodes_array[i][t]
-                    except IndexError: #this occurs when the trajectory died
+                    except IndexError: #this occurs when the trajectory is over.
                         break
                     #first two products are scalars, final is scalar multiplication of computed gradients on the NN
                     mu, log_sigma = self.forward(state)
