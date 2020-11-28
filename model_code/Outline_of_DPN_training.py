@@ -75,7 +75,7 @@ def weights_init_uniform_rule(m):
 
 
 class DpnTraining:
-    def __init__(self, INPUT_SIZE):
+    def __init__(self, INPUT_SIZE, policy_net):
         '''
         INPUT_SIZE = size and shape from the environment's output for a state  TODO
         OUTPUT_SIZE = number of possible actions                               TODO
@@ -87,32 +87,16 @@ class DpnTraining:
         self.env = Environment(DATA_FILE_NAME, EPSILON_PERTURBATIONS = EPSILON_PERTURBATIONS)
 
         # Define the network
-        self.network = DPN(INPUT_SIZE)
+        self.network = policy_net(INPUT_SIZE)
         self.network.apply(weights_init_uniform_rule)
         self.critic = Critic(INPUT_SIZE)
+        # logging
         self.eps = np.finfo(np.float32).eps.item()
         self.rewards = []
         self.variance = []
         self.rewards_last = []
         self.variance_last = []
 
-    def finish_episode():
-        R = 0
-        policy_loss = []
-        returns = []
-        for r in self.rewards[::-1]:
-            R = r + DISCOUNT * R
-            returns.insert(0, R)
-        returns = torch.tensor(returns)
-        returns = (returns - returns.mean()) / (returns.std() + self.eps)
-        for log_prob, R in zip(self.saved_log_probs, returns):
-            policy_loss.append(-log_prob * R)
-        optimizer.zero_grad()
-        policy_loss = torch.cat(policy_loss).sum()
-        policy_loss.backward()
-        optimizer.step()
-        del self.rewards[:]
-        del self.saved_log_probs[:]
 
     def train(self, ITERATIONS):
         optimizer = torch.optim.Adam(self.network.parameters(), lr = ALPHA) #This is roughly based on some pytorch examples. We use this to update weights of the model.
@@ -182,8 +166,7 @@ class DpnTraining:
             baseline_array = np.array([sum(cum_values[:,i])/EPISODES for i in range(longest_trajectory)]) #Probably defeats the purpose of numpy, but we're essentially trying to sum each valuation array together, and then divide by the number of episodes
             avg = baseline_array[0]
             var = [np.sqrt(sum(np.square(cum_values[:,i]-baseline_array[i]))/EPISODES) for i in range(longest_trajectory)]
-            #print(cum_values)
-            #print()
+            #log
             self.rewards.append(avg)
             self.variance.append(var[0])
             self.variance_last.append(var[-1])

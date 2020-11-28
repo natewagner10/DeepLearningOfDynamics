@@ -3,6 +3,7 @@ from torch.nn import functional as F
 import numpy as np
 
 class DPN(nn.Module):
+    """AGENTS"""
     def __init__(self, input_size):
         super(DPN, self).__init__()
 
@@ -61,6 +62,7 @@ class DPN_alt(nn.Module):
         return mu, logvar
 
 class Critic(nn.Module):
+    """CRITIC"""
     def __init__(self, input_size):
         super(Critic, self).__init__()
 
