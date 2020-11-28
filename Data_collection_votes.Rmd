@@ -1,0 +1,58 @@
+---
+title: "yo"
+author: "Justin Tienken-Harder"
+date: "10/5/2020"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+critters <- c("Gaze of racoons", "Gaggle of geese", "Scurry of squirrels", "Herd of deer", "Passels of opossums", "Mischief of rats", "Nest of mice", "Murder of crows", "Round of robins")
+critters <- factor(critters, levels = c("Round of robins",
+                                        "Murder of crows",
+                                        "Gaggle of geese",
+                                        "Scurry of squirrels",
+                                        "Herd of deer",
+                                        "Gaze of racoons",
+                                        "Passels of opossums",
+                                        "Mischief of rats",
+                                        "Nest of mice"))
+votes <- c(c(1,0,1,0,1,0,0,0,0), 
+           c(1,1,1,1,0,0,0,0,0), 
+           c(0,0,0,1,0,0,0,0,0), 
+           c(0,0,1,0,1,1,0,0,1),
+           c(0,0,1,0,0,0,1,0,0))
+day_critters <- data.frame(collection = rep(critters, 5), 
+                           person = c(rep(c("Justin"), 9), rep(c("Manda"), 9), rep(c("Nate"), 9), rep(c("Dominic"), 9), rep(c("Rosa"), 9)),
+                           vote = votes)
+day_critters <- day_critters %>% mutate(day_or_night = ifelse(
+                                        collection  %in% c("Round of robins",
+                                                           "Murder of crows",
+                                                            "Gaggle of geese",
+                                                            "Scurry of squirrels"), "Day", ifelse(collection == "Herd of deer", "Both", "Night")))
+#day_critters
+ggplot(data = day_critters, aes(x =day_or_night, y = vote, fill = person)) +
+  geom_bar(stat="identity") +
+  xlab("Votes for daytime or night-time critters")
+ggplot(data = day_critters, aes(x=collection, y=vote, fill = person)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))+
+  xlab("Collection Of Critters")+
+  ggtitle("Best collection of critter names?")
+```
+
+```{r}
+votes <- c(c(0,0,1),
+           c(0,1,1),
+           c(0,0,1),
+           c(0,0,1),
+           c(0,1,1))
+day_night <- data.frame(day_or_night = rep(c("Daytime", "Yes", "Nighttime"), 5),
+                        person = c(rep(c("Justin"), 3), rep(c("Manda"), 3), rep(c("Nate"), 3), rep(c("Dominic"), 3), rep(c("Rosa"), 3)),
+                        vote = votes)
+day_night$day_or_night <- factor(day_night$day_or_night, levels = c("Daytime", "Yes", "Nighttime"))
+ggplot(data = day_night, aes(x = day_or_night, y = vote, fill = person))+
+  geom_bar(stat = "identity")+
+  xlab("What time of day should we collect video data for?")
+```
+
